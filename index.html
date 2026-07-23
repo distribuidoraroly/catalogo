@@ -4738,6 +4738,18 @@
         `<p class="hero-sub">${escHtml(c.heroSub)}</p>`
       );
     }
+    if (c.clientes !== undefined && c.clientes !== '') {
+      html = html.replace(
+        /(<div class="stat-num" id="cnt-clientes">)[^<]*(<\/div>)/,
+        `$1${c.clientes}+$2`
+      );
+    }
+    if (c.años !== undefined && c.años !== '') {
+      html = html.replace(
+        /(<div class="stat-num" id="cnt-años">)[^<]*(<\/div>)/,
+        `$1${c.años}+$2`
+      );
+    }
 
     // 9. Quitar el script de inyección de datos bakeados del HTML exportado
     //    (ya están en localStorage y en el array, no hace falta doble inyección)
@@ -4939,9 +4951,12 @@
   filtrarProductos();
 
   setTimeout(() => {
+    const __cfgStats = getConfigInicio();
+    const __clientesTarget = __cfgStats.clientes !== undefined ? __cfgStats.clientes : 120;
+    const __añosTarget     = __cfgStats.años     !== undefined ? __cfgStats.años     : 6;
     animarContador('cnt-productos', productos.length, '+');
-    animarContador('cnt-clientes', 120, '+');
-    animarContador('cnt-años', 6, '+');
+    animarContador('cnt-clientes', __clientesTarget, '+');
+    animarContador('cnt-años', __añosTarget, '+');
   }, 800);
 </script>
 
