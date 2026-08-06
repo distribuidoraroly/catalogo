@@ -4759,6 +4759,22 @@
     const doctype = '<!DOCTYPE html>\n';
     let html = doctype + document.documentElement.outerHTML;
 
+    // 2.b Limpiar clases de estado temporal (paneles/cajones abiertos, avisos visibles)
+    //     para que el HTML exportado siempre arranque "cerrado", sin importar en qué
+    //     estado estaba la pantalla en el momento de exportar.
+    const idsAResetear = [
+      'cart-backdrop', 'cart-drawer',
+      'admin-auth-backdrop',
+      'admin-backdrop', 'admin-panel',
+      'edit-backdrop', 'edit-drawer'
+    ];
+    idsAResetear.forEach(id => {
+      const re = new RegExp(`(id="${id}"[^>]*class="[^"]*)\\s*\\bopen\\b([^"]*")`, 'g');
+      html = html.replace(re, '$1$2');
+    });
+    // Los avisos/toasts ('show') también se resetean del mismo modo
+    html = html.replace(/(class="toast[^"]*)\s*\bshow\b([^"]*")/g, '$1$2');
+
     // 3. Reemplazar el array `productos` con los datos actualizados (precios, nombres, desc, stock)
     const productosActualizados = productos.map(p => {
       const d = datosAdmin[p.id] || {};
