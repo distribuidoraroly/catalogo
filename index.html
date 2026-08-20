@@ -3948,6 +3948,7 @@
 
   const filterContainer = document.getElementById('filter-btns');
   if (filterContainer) filterContainer.innerHTML = '';
+  if (filterContainer) filterContainer.innerHTML = '';
   categoriasUnicas.forEach((c, i) => {
     const btn = document.createElement('button');
     btn.className = 'filter-btn' + (i === 0 ? ' active' : '');
@@ -4797,6 +4798,7 @@
   window.addEventListener('resize', unlockScrollIfSafe, { passive: true });
 
   const filterContainer = document.getElementById('filter-btns');
+  if (filterContainer) filterContainer.innerHTML = '';
   if (filterContainer && window.MutationObserver) {
     new MutationObserver(() => dedupeFilters()).observe(filterContainer, { childList: true });
   }
