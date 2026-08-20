@@ -1,0 +1,64 @@
+name: Catalog performance and scroll fix
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  optimize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Optimize catalog HTML
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          files = [Path('index.html'), Path('distribuidora-roly.html'), Path('distribuidora-roly (1).html')]
+          css = r'''
+          /* PERFORMANCE / SCROLL FIX */
+          html { overflow-y: auto !important; overscroll-behavior-y: auto; }
+          body { overflow-y: auto !important; overflow-x: hidden; position: static !important; touch-action: pan-y !important; }
+          .product-card { content-visibility: auto; contain-intrinsic-size: 360px 430px; }
+          img { content-visibility: auto; }
+          @media (max-width: 700px) {
+            * { -webkit-tap-highlight-color: transparent; }
+            .product-card { contain: layout paint style; }
+            nav, .mobile-menu, #cart-backdrop, #cart-drawer, #admin-backdrop, #admin-panel, #edit-backdrop, #edit-drawer, #admin-auth-backdrop { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+          }
+          '''
+          changed = False
+          for p in files:
+              if not p.exists(): continue
+              s = p.read_text(encoding='utf-8')
+              old = s
+              # Never eagerly decode all embedded product photos.
+              s = re.sub(r'<img\b(?![^>]*\bloading=)', '<img loading="lazy" decoding="async" ', s, flags=re.I)
+              # Make scroll robust even if an old modal state or script tries to lock the body at startup.
+              if 'PERFORMANCE / SCROLL FIX' not in s:
+                  s = s.replace('</head>', '<style>' + css + '</style>\n</head>', 1)
+              if s != old:
+                  p.write_text(s, encoding='utf-8')
+                  changed = True
+          print('changed=', changed)
+          PY
+
+      - name: Commit optimization
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html distribuidora-roly.html 'distribuidora-roly (1).html'
+          if git diff --cached --quiet; then
+            echo "No changes"
+          else
+            git commit -m "Fix mobile scroll and lazy-load catalog images"
+            git push
+          fi
