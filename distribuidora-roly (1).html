@@ -1888,7 +1888,7 @@
     // Build WhatsApp message
     const lineas = carrito.map(p => `• ${p.nombre} x${p.qty}${p.precio > 0 ? ' ($' + (p.precio*p.qty).toLocaleString('es-AR') + ')' : ''}`).join('%0A');
     const msgWA = `Hola Roly! Quiero hacer el siguiente pedido:%0A%0A${lineas}%0A%0ATotal estimado: $${totalPrecio.toLocaleString('es-AR')}`;
-    document.getElementById('cart-wa-btn').href = `https://wa.me/541126707553?text=${msgWA}`;
+    document.getElementById('cart-wa-btn').href = `https://wa.me/541159387020?text=${msgWA}`;
 
     footer.style.display = 'block';
   }
@@ -1936,7 +1936,7 @@
 
     // Abrir WhatsApp
     setTimeout(() => {
-      window.open(`https://wa.me/541126707553?text=${waMsg}`, '_blank');
+      window.open(`https://wa.me/541159387020?text=${waMsg}`, '_blank');
       fmsg.style.display = 'none';
     }, 800);
   }
