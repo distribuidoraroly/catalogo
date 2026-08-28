@@ -1207,4 +1207,54 @@ img { content-visibility: auto; }
     handleImportFile: handleImportFile
   };
 })();
-</script></body></html>
+</script><!-- CATALOG_STABILITY_PATCH_V1 -->
+
+<script>
+(() => {
+  const unlockScrollIfSafe = () => {
+    const lockingSelectors = ['#cart-backdrop.open', '#admin-auth-backdrop.open', '#admin-backdrop.open', '#edit-backdrop.open', '#mobile-menu.open'];
+    const locked = lockingSelectors.some((selector) => document.querySelector(selector));
+    if (!locked && document.body) {
+      document.documentElement.style.removeProperty('overflow');
+      document.body.style.removeProperty('overflow');
+      document.body.style.removeProperty('position');
+      document.body.style.removeProperty('touch-action');
+    }
+  };
+
+  const dedupeFilters = () => {
+    const container = document.getElementById('filter-btns');
+    if (!container) return;
+    const seen = new Set();
+    container.querySelectorAll('.filter-btn').forEach((button) => {
+      const key = button.dataset.cat || button.textContent.trim();
+      if (seen.has(key)) button.remove();
+      else seen.add(key);
+    });
+  };
+
+  const stabilize = () => {
+    const adminBackdrop = document.getElementById('admin-backdrop');
+    const adminPanel = document.getElementById('admin-panel');
+    if (adminBackdrop) adminBackdrop.classList.remove('open');
+    if (adminPanel) adminPanel.classList.remove('open');
+    const adminToggle = document.getElementById('admin-toggle');
+    if (adminToggle) adminToggle.classList.remove('active');
+    dedupeFilters();
+    unlockScrollIfSafe();
+  };
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', stabilize, { once: true });
+  else stabilize();
+  window.addEventListener('load', stabilize, { once: true });
+  window.addEventListener('pageshow', stabilize);
+  window.addEventListener('resize', unlockScrollIfSafe, { passive: true });
+
+  const filterContainer = document.getElementById('filter-btns');
+  if (filterContainer && window.MutationObserver) {
+    new MutationObserver(() => dedupeFilters()).observe(filterContainer, { childList: true });
+  }
+})();
+</script>
+
+</body></html>
