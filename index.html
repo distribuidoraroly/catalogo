@@ -262,6 +262,18 @@ footer{border-top:1px solid var(--border);padding:44px 0 28px;color:var(--muted)
   .featured-grid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr))}
 }
 </style>
+<style>
+/* PERFORMANCE / SCROLL FIX */
+html { overflow-y: auto !important; overscroll-behavior-y: auto; }
+body { overflow-y: auto !important; overflow-x: hidden; position: static !important; touch-action: pan-y !important; }
+.product-card { content-visibility: auto; contain-intrinsic-size: 360px 430px; }
+img { content-visibility: auto; }
+@media (max-width: 700px) {
+  * { -webkit-tap-highlight-color: transparent; }
+  .product-card { contain: layout paint style; }
+  nav, .mobile-menu, #cart-backdrop, #cart-drawer, #admin-backdrop, #admin-panel, #edit-backdrop, #edit-drawer, #admin-auth-backdrop { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+}
+</style>
 </head>
 <body>
 
@@ -950,7 +962,7 @@ footer{border-top:1px solid var(--border);padding:44px 0 28px;color:var(--muted)
       .filter(function (p) { return p.nombre.toLowerCase().indexOf(q) !== -1; })
       .sort(function (a, b) { return a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }); });
     document.getElementById('admin-list').innerHTML = list.map(function (p) {
-      var thumb = p.imagen ? '<img src="' + p.imagen + '" alt="">' : p.emoji;
+      var thumb = p.imagen ? '<img loading="lazy" decoding="async"  src="' + p.imagen + '" alt="">' : p.emoji;
       return (
         '<div class="admin-item' + (editingId === p.id ? ' selected' : '') + '" onclick="App.openEditor(' + p.id + ')">' +
           '<div class="admin-thumb">' + thumb + '</div>' +
@@ -977,7 +989,7 @@ footer{border-top:1px solid var(--border);padding:44px 0 28px;color:var(--muted)
     document.getElementById('editor-body').innerHTML =
       '<div class="img-drop' + (p.imagen ? ' has-img' : '') + '" id="editor-img-drop" onclick="document.getElementById(\'file-input\').click()">' +
         '<span class="ph">' + p.emoji + '<br>Tocar para subir foto</span>' +
-        '<img id="editor-img-preview" src="' + (p.imagen || '') + '">' +
+        '<img loading="lazy" decoding="async"  id="editor-img-preview" src="' + (p.imagen || '') + '">' +
       '</div>' +
       '<div class="img-actions">' +
         '<button class="mini-btn" onclick="document.getElementById(\'file-input\').click()">📁 Subir archivo</button>' +
