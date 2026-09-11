@@ -509,7 +509,7 @@ button,a,input,textarea,select{touch-action:manipulation}
     <h1 class="hero-title" id="hero-title">Todo lo que tu<br><span class="accent">cocina necesita.</span></h1>
     <p class="hero-sub" id="hero-sub">Insumos para pizzerías, hamburgueserías y cocinas profesionales en CABA y GBA.</p>
     <div class="hero-cta">
-      <a href="#catalogo" class="btn btn-primary">Ver catálogo</a>
+      <a href="#catalogo" class="btn btn-primary" onclick="App.openFullCatalog()">Ver catálogo</a>
       <a href="#" id="hero-wa-btn" target="_blank" rel="noopener" class="btn btn-ghost">Pedir por WhatsApp</a>
     </div>
     <div class="hero-stats">
@@ -1128,6 +1128,16 @@ button,a,input,textarea,select{touch-action:manipulation}
     }
   }
 
+  function openFullCatalog() {
+    showFullCatalog = true;
+    var el = document.getElementById('catalog-full');
+    var btn = document.getElementById('toggle-catalog-btn');
+    el.style.display = 'block';
+    btn.textContent = 'Ocultar catálogo completo ▴';
+    applyFilters();
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
   // ── Carrito ──
   function addToCart(id) {
     var p = getProduct(id);
@@ -1718,6 +1728,7 @@ button,a,input,textarea,select{touch-action:manipulation}
     closeMobileMenu: closeMobileMenu,
     applyFilters: applyFilters,
     toggleFullCatalog: toggleFullCatalog,
+    openFullCatalog: openFullCatalog,
     addToCart: addToCart,
     changeQty: changeQty,
     clearCart: clearCart,
@@ -1774,54 +1785,4 @@ button,a,input,textarea,select{touch-action:manipulation}
   if(window.visualViewport) window.visualViewport.addEventListener('resize',scheduleSync,{passive:true});
   syncViewport();
 })();
-</script><!-- CATALOG_STABILITY_PATCH_V1 -->
-
-<script>
-(() => {
-  const unlockScrollIfSafe = () => {
-    const lockingSelectors = ['#cart-backdrop.open', '#admin-auth-backdrop.open', '#admin-backdrop.open', '#edit-backdrop.open', '#mobile-menu.open'];
-    const locked = lockingSelectors.some((selector) => document.querySelector(selector));
-    if (!locked && document.body) {
-      document.documentElement.style.removeProperty('overflow');
-      document.body.style.removeProperty('overflow');
-      document.body.style.removeProperty('position');
-      document.body.style.removeProperty('touch-action');
-    }
-  };
-
-  const dedupeFilters = () => {
-    const container = document.getElementById('filter-btns');
-    if (!container) return;
-    const seen = new Set();
-    container.querySelectorAll('.filter-btn').forEach((button) => {
-      const key = button.dataset.cat || button.textContent.trim();
-      if (seen.has(key)) button.remove();
-      else seen.add(key);
-    });
-  };
-
-  const stabilize = () => {
-    const adminBackdrop = document.getElementById('admin-backdrop');
-    const adminPanel = document.getElementById('admin-panel');
-    if (adminBackdrop) adminBackdrop.classList.remove('open');
-    if (adminPanel) adminPanel.classList.remove('open');
-    const adminToggle = document.getElementById('admin-toggle');
-    if (adminToggle) adminToggle.classList.remove('active');
-    dedupeFilters();
-    unlockScrollIfSafe();
-  };
-
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', stabilize, { once: true });
-  else stabilize();
-  window.addEventListener('load', stabilize, { once: true });
-  window.addEventListener('pageshow', stabilize);
-  window.addEventListener('resize', unlockScrollIfSafe, { passive: true });
-
-  const filterContainer = document.getElementById('filter-btns');
-  if (filterContainer && window.MutationObserver) {
-    new MutationObserver(() => dedupeFilters()).observe(filterContainer, { childList: true });
-  }
-})();
-</script>
-
-</body></html>
+</script></body></html>
