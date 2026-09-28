@@ -468,8 +468,101 @@ button,a,input,textarea,select{touch-action:manipulation}
   }
 }
 </style>
+<style id="scroll-reveal-css">
+/* ── SCROLL REVEAL (estilo Apple): fade in / fade out al scrollear ── */
+:root{--ease-apple:cubic-bezier(.16,1,.3,1)}
+.reveal{opacity:0;translate:0 32px;scale:.98;transition:opacity .8s var(--ease-apple),translate .9s var(--ease-apple),scale .9s var(--ease-apple);transition-delay:var(--rd,0ms)}
+.reveal.out{translate:0 -20px}
+.reveal.in{opacity:1;translate:0 0;scale:1}
+/* las cards conservan su hover rápido (border-color / transform) */
+.product-card.reveal{transition:opacity .8s var(--ease-apple),translate .9s var(--ease-apple),scale .9s var(--ease-apple),border-color .2s,transform .2s;transition-delay:var(--rd,0ms),var(--rd,0ms),var(--rd,0ms),0ms,0ms}
+/* sin stock: mantiene su opacidad atenuada una vez visible */
+.product-card.sin-stock.reveal:not(.in){opacity:0}
+.product-card.sin-stock.reveal.in{opacity:.55}
+/* zoom suave de la foto al entrar */
+.product-img{overflow:hidden}
+.product-card.reveal .product-img img,.f-card.reveal .f-card-img img{scale:1.1;transition:scale 1.3s var(--ease-apple);transition-delay:var(--rd,0ms)}
+.product-card.reveal.in .product-img img,.f-card.reveal.in .f-card-img img{scale:1}
+@media (max-width:700px){.reveal{translate:0 22px}.reveal.out{translate:0 -14px}}
+</style>
 </head>
 <body>
+<script id="scroll-reveal-js">
+(function () {
+  'use strict';
+  if (!('IntersectionObserver' in window) || !('MutationObserver' in window)) return;
+  if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+  var SEL = [
+    '.hero .eyebrow', '.hero-title', '.hero-sub', '.hero-cta', '.hero-stats',
+    '.offers-section .eyebrow', '.offers-section .section-title', '.offers-carousel',
+    '.featured-head', '.f-card',
+    '#catalog-full .eyebrow', '#catalog-full .section-title', '#catalog-full .section-sub',
+    '.catalog-toolbar', '.filters', '.results-label', '.product-card', '.stock-divider',
+    '#nosotros .eyebrow', '#nosotros .section-title', '.about-card',
+    '#contacto .eyebrow', '#contacto .section-title', '.contact-grid > *'
+  ].join(',');
+  var SKIP = '.drawer,.auth-modal,#admin-panel,#edit-drawer,#toast';
+
+  // Entra: aparece (escalonado). Sale: se desvanece (hacia arriba si sale por arriba).
+  var io = new IntersectionObserver(function (entries) {
+    var enter = [];
+    entries.forEach(function (e) {
+      if (e.isIntersecting) { enter.push(e); return; }
+      var el = e.target;
+      el.style.setProperty('--rd', '0ms');
+      el.classList.remove('in');
+      el.classList.toggle('out', e.boundingClientRect.top < 0);
+    });
+    enter.sort(function (a, b) {
+      var A = a.boundingClientRect, B = b.boundingClientRect;
+      return (Math.round(A.top / 10) - Math.round(B.top / 10)) || (A.left - B.left);
+    });
+    enter.forEach(function (e, i) {
+      var el = e.target;
+      el.style.setProperty('--rd', Math.min(i * 70, 280) + 'ms');
+      el.classList.remove('out');
+      el.classList.add('in');
+    });
+  }, { rootMargin: '-6% 0px -8% 0px', threshold: 0 });
+
+  function reg(el, instant) {
+    if (el.__rv) return;
+    if (el.closest && el.closest(SKIP)) return;
+    el.__rv = 1;
+    el.classList.add('reveal');
+    if (instant) el.classList.add('in');
+    io.observe(el);
+  }
+  function scan(node) {
+    if (node.nodeType !== 1) return;
+    var instant = false;
+    try {
+      // mientras se escribe en el buscador, los resultados aparecen sin animar (evita parpadeo)
+      instant = !!(document.activeElement && document.activeElement.id === 'search-input' && node.closest('#products-grid'));
+    } catch (_) {}
+    if (node.matches(SEL)) reg(node, instant);
+    var list = node.querySelectorAll(SEL);
+    for (var i = 0; i < list.length; i++) reg(list[i], instant);
+  }
+  function drop(node) {
+    if (node.nodeType !== 1) return;
+    if (node.__rv) { node.__rv = 0; io.unobserve(node); }
+    var list = node.querySelectorAll('.reveal');
+    for (var i = 0; i < list.length; i++) { list[i].__rv = 0; io.unobserve(list[i]); }
+  }
+
+  // Corre antes del primer render y engancha también las cards que arma la app con JS
+  new MutationObserver(function (recs) {
+    for (var i = 0; i < recs.length; i++) {
+      var r = recs[i], j, k;
+      for (j = 0; j < r.removedNodes.length; j++) drop(r.removedNodes[j]);
+      for (k = 0; k < r.addedNodes.length; k++) scan(r.addedNodes[k]);
+    }
+  }).observe(document.documentElement, { childList: true, subtree: true });
+})();
+</script>
+
 
 <div id="announce">
   <span id="announce-text">🫒 Pedidos por WhatsApp con entrega en CABA y GBA</span>
