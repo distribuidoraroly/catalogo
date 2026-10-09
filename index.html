@@ -804,7 +804,7 @@ button,a,input,textarea,select{touch-action:manipulation}
       <button class="mini-btn" onclick="App.exportJSON()">💾 Exportar datos</button>
       <button class="mini-btn" onclick="document.getElementById('import-input').click()">📂 Importar datos</button>
     </div>
-    <button class="save-btn" onclick="App.exportPriceList()">🧾 Exportar lista de precios</button>
+    <button class="save-btn" onclick="App.exportPriceList()">🧾 Exportar lista de precios (PDF)</button>
     <button class="mini-btn danger" onclick="App.logoutAdmin()">Cerrar sesión de admin</button>
   </div>
 </div>
@@ -1722,163 +1722,232 @@ button,a,input,textarea,select{touch-action:manipulation}
     var data = { overrides: overrides, config: configOverride, destacados: destacados, newProducts: newProducts, deletedProducts: deletedProducts };
     downloadBlob(JSON.stringify(data, null, 2), 'roly_datos.json', 'application/json');
   }
-  // ── Lista de precios (impresión / PDF) ──
-  function exportPriceList() {
-    // Incluye TODOS los productos: los que tienen stock y los que están sin stock.
-    var products = allProducts().slice();
-    var cfg = getConfig();
-    var byCategory = {};
+  // ── Lista de precios (PDF) ──
+  // Genera un PDF real (descarga directa, sin ventana de impresión).
+  // jsPDF se carga recién al tocar el botón, así el sitio de los clientes no pesa más.
+  var PDF_LIBS = [
+    'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
+    'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js'
+  ];
+  var priceListBusy = false;
 
+  function loadScriptOnce(src) {
+    return new Promise(function (resolve, reject) {
+      var existing = document.querySelector('script[data-pdf-lib="' + src + '"]');
+      if (existing && existing.getAttribute('data-loaded') === '1') { resolve(); return; }
+      var s = existing || document.createElement('script');
+      var timer = setTimeout(function () { reject(new Error('timeout ' + src)); }, 20000);
+      s.onload = function () { clearTimeout(timer); s.setAttribute('data-loaded', '1'); resolve(); };
+      s.onerror = function () { clearTimeout(timer); reject(new Error('no se pudo cargar ' + src)); };
+      if (!existing) {
+        s.src = src;
+        s.setAttribute('data-pdf-lib', src);
+        document.head.appendChild(s);
+      }
+    });
+  }
+
+  function loadPdfLibs() {
+    if (window.jspdf && window.jspdf.jsPDF && window.jspdf.jsPDF.API && window.jspdf.jsPDF.API.autoTable) {
+      return Promise.resolve();
+    }
+    return loadScriptOnce(PDF_LIBS[0]).then(function () { return loadScriptOnce(PDF_LIBS[1]); });
+  }
+
+  // Miniatura cuadrada en JPEG (liviana) a partir de la imagen del producto.
+  function makeThumb(src, size) {
+    return new Promise(function (resolve) {
+      if (!src) { resolve(null); return; }
+      var img = new Image();
+      img.onload = function () {
+        try {
+          var c = document.createElement('canvas');
+          c.width = size; c.height = size;
+          var ctx = c.getContext('2d');
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, size, size);
+          var w = img.naturalWidth || size, h = img.naturalHeight || size;
+          var k = Math.min(size / w, size / h);
+          var dw = w * k, dh = h * k;
+          ctx.drawImage(img, (size - dw) / 2, (size - dh) / 2, dw, dh);
+          resolve(c.toDataURL('image/jpeg', 0.78));
+        } catch (e) { resolve(null); }
+      };
+      img.onerror = function () { resolve(null); };
+      img.src = src;
+    });
+  }
+
+  // @@PDF_BUILDER_START
+  // Función pura: recibe el constructor de jsPDF y los datos, devuelve el documento.
+  function buildPriceListPdf(jsPDF, data) {
+    var products = data.products, categorias = data.categorias, cfg = data.cfg, thumbs = data.thumbs || {};
+    var ORANGE = [240, 112, 32], ORANGE_DARK = [217, 93, 18], INK = [25, 23, 21], MUTED = [112, 107, 99];
+    var SOFT = [250, 248, 245], RED = [201, 54, 50], LINE = [222, 218, 212];
+    var M = { left: 12, right: 12, top: 14, bottom: 18 };
+
+    var doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true });
+    var PW = doc.internal.pageSize.getWidth();
+    var PH = doc.internal.pageSize.getHeight();
+    var contentW = PW - M.left - M.right;
+
+    function money(v) { return '$' + Number(v || 0).toLocaleString('es-AR'); }
+    function clean(s) {
+      // Helvetica estándar no dibuja emojis ni símbolos raros: los sacamos para que no salgan caracteres rotos.
+      return String(s == null ? '' : s)
+        .replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}]/gu, '')
+        .replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, '"')
+        .replace(/\s+/g, ' ').trim();
+    }
+
+    // Categorías en el mismo orden y con los mismos nombres que se ven en el sitio.
+    var order = [], labels = {};
+    (categorias || []).forEach(function (c) {
+      if (c.cat && c.cat !== 'todos') { order.push(c.cat); labels[c.cat] = c.label || c.cat; }
+    });
+    var byCat = {};
     products.forEach(function (p) {
-      var cat = p.cat || 'otros';
-      if (!byCategory[cat]) byCategory[cat] = [];
-      byCategory[cat].push(p);
+      var k = p.cat && labels[p.cat] ? p.cat : '__otros';
+      if (!byCat[k]) byCat[k] = [];
+      byCat[k].push(p);
     });
+    if (byCat.__otros) { order.push('__otros'); labels.__otros = 'Otros'; }
+    order = order.filter(function (k) { return byCat[k] && byCat[k].length; });
 
-    function esc(value) {
-      return String(value == null ? '' : value)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#039;');
-    }
+    // ── Encabezado ──
+    var brand = clean(cfg.logo || 'Roly');
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(22); doc.setTextColor(INK[0], INK[1], INK[2]);
+    doc.text(brand, M.left, M.top + 7);
+    var bw = doc.getTextWidth(brand);
+    doc.setTextColor(ORANGE[0], ORANGE[1], ORANGE[2]);
+    doc.text('.', M.left + bw, M.top + 7);
 
-    function money(value) {
-      return '$' + Number(value || 0).toLocaleString('es-AR');
-    }
+    doc.setFontSize(9); doc.setFont('helvetica', 'normal'); doc.setTextColor(MUTED[0], MUTED[1], MUTED[2]);
+    var today = new Date().toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    doc.text('Actualizada el ' + today, PW - M.right, M.top + 7, { align: 'right' });
 
-    function categoryName(cat) {
-      return String(cat || 'otros').replace(/[-_]/g, ' ');
-    }
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(18); doc.setTextColor(INK[0], INK[1], INK[2]);
+    doc.text('Lista de precios', M.left, M.top + 16);
 
-    var categoryKeys = Object.keys(byCategory).sort(function (a, b) {
-      return categoryName(a).localeCompare(categoryName(b), 'es');
-    });
+    var contact = [cfg.telefono, cfg.horario, cfg.direccion].map(clean).filter(Boolean).join('   |   ');
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(MUTED[0], MUTED[1], MUTED[2]);
+    if (contact) doc.text(doc.splitTextToSize(contact, contentW), M.left, M.top + 22);
 
-    var cards = categoryKeys.map(function (cat) {
-      var items = byCategory[cat].slice().sort(function (a, b) {
-        // Primero productos disponibles y después los sin stock.
-        if (!!a.sinStock !== !!b.sinStock) return a.sinStock ? 1 : -1;
+    doc.setDrawColor(INK[0], INK[1], INK[2]); doc.setLineWidth(0.5);
+    doc.line(M.left, M.top + 26, PW - M.right, M.top + 26);
+
+    var y = M.top + 32;
+    var ROW_H = 14, THUMB = 11;
+
+    // ── Una tabla por categoría ──
+    order.forEach(function (key) {
+      var items = byCat[key].slice().sort(function (a, b) {
+        if (!!a.sinStock !== !!b.sinStock) return a.sinStock ? 1 : -1; // primero los disponibles
         return String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es');
       });
 
-      return '<section class="category">' +
-        '<div class="category-head"><span>' + esc(categoryName(cat)) + '</span><i></i></div>' +
-        '<div class="grid">' +
-        items.map(function (p) {
-          var image = p.imagen
-            ? '<img loading="lazy" decoding="async"  src="' + p.imagen + '" alt="' + esc(p.nombre) + '">'
-            : '<div class="no-image">ROLY</div>';
+      // Evita un título de categoría huérfano al pie de la página.
+      if (y + 8 + ROW_H * Math.min(2, items.length) > PH - M.bottom) { doc.addPage(); y = M.top; }
 
-          var unit = p.porPeso
-            ? ' / kg'
-            : (p.unidad ? ' · ' + esc(p.unidad) : '');
-
-          var stock = !!p.sinStock;
-          var priceBlock = stock
-            ? '<div class="price out-stock">SIN STOCK</div>'
-            : '<div class="price">' + money(p.precio) + '<small>' + unit + '</small></div>';
-
-          return '<article class="price-card' + (stock ? ' is-out-stock' : '') + '">' +
-            '<div class="photo">' + image + '</div>' +
-            '<div class="info">' +
-              '<div class="name">' + esc(p.nombre) + '</div>' +
-              (p.desc ? '<div class="desc">' + esc(p.desc) + '</div>' : '') +
-              priceBlock +
-            '</div>' +
-          '</article>';
-        }).join('') +
-        '</div>' +
-      '</section>';
-    }).join('');
-
-    var generatedAt = new Date().toLocaleDateString('es-AR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
+      doc.autoTable({
+        startY: y,
+        margin: { left: M.left, right: M.right, top: M.top, bottom: M.bottom },
+        theme: 'plain',
+        tableWidth: contentW,
+        showHead: 'everyPage',
+        rowPageBreak: 'avoid',
+        head: [[{ content: String(labels[key]).toUpperCase(), colSpan: 3 }]],
+        body: items.map(function (p) { return ['', clean(p.nombre), '']; }),
+        styles: { font: 'helvetica', fontSize: 9.5, cellPadding: { top: 1.5, bottom: 1.5, left: 2, right: 2 }, textColor: INK, valign: 'middle', minCellHeight: ROW_H, lineWidth: 0 },
+        headStyles: { fillColor: ORANGE, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 9.5, minCellHeight: 7.5, cellPadding: { top: 1.6, bottom: 1.6, left: 3, right: 2 } },
+        alternateRowStyles: { fillColor: SOFT },
+        columnStyles: {
+          0: { cellWidth: THUMB + 5 },
+          1: { cellWidth: 'auto' },
+          2: { cellWidth: 36 }
+        },
+        didParseCell: function (h) {
+          if (h.section !== 'body' || h.column.index !== 1) return;
+          var p = items[h.row.index];
+          h.cell.styles.fontStyle = 'bold';
+          if (p.sinStock) h.cell.styles.textColor = [150, 145, 138];
+        },
+        didDrawCell: function (h) {
+          if (h.section !== 'body') return;
+          var p = items[h.row.index];
+          var c = h.cell;
+          if (h.column.index === 0) {
+            var x = c.x + (c.width - THUMB) / 2, yy = c.y + (c.height - THUMB) / 2;
+            var t = thumbs[p.id];
+            if (t) {
+              try { doc.addImage(t, 'JPEG', x, yy, THUMB, THUMB, 'th' + p.id, 'FAST'); } catch (e) { /* sin foto */ }
+            }
+            doc.setDrawColor(LINE[0], LINE[1], LINE[2]); doc.setLineWidth(0.2);
+            doc.roundedRect(x, yy, THUMB, THUMB, 1, 1, 'S');
+          }
+          if (h.column.index === 2) {
+            var rx = c.x + c.width - 2;
+            if (p.sinStock) {
+              doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(RED[0], RED[1], RED[2]);
+              doc.text('SIN STOCK', rx, c.y + c.height / 2 + 1, { align: 'right' });
+            } else {
+              var unit = (p.porPeso || /kg/i.test(p.unidad || '')) ? 'por kg' : clean(p.unidad || '').replace(/^\/\s*/, 'por ');
+              var cy = c.y + c.height / 2;
+              doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(ORANGE_DARK[0], ORANGE_DARK[1], ORANGE_DARK[2]);
+              doc.text(money(p.precio), rx, unit ? cy : cy + 1.5, { align: 'right' });
+              if (unit) {
+                doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(MUTED[0], MUTED[1], MUTED[2]);
+                doc.text(unit, rx, cy + 4, { align: 'right' });
+              }
+            }
+          }
+        }
+      });
+      y = doc.lastAutoTable.finalY + 6;
     });
 
-    var html = '<!doctype html><html lang="es"><head><meta charset="utf-8">' +
-      '<meta name="viewport" content="width=device-width,initial-scale=1">' +
-      '<title>Lista de precios — ' + esc(cfg.logo || 'Distribuidora Roly') + '</title>' +
-      '<link rel="preconnect" href="https://fonts.googleapis.com">' +
-      '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>' +
-      '<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Syne:wght@700;800&display=swap" rel="stylesheet">' +
-      '<style>' +
-      ':root{--orange:#f07020;--orange-dark:#d95d12;--text:#191715;--muted:#706b63;--line:#dedad4;--soft:#f6f4f1;--danger:#c93632}' +
-      '*{box-sizing:border-box}' +
-      'html,body{margin:0;padding:0;background:#fff;color:var(--text);font-family:Inter,Arial,sans-serif}' +
-      'body{padding:34px 28px 46px;-webkit-print-color-adjust:exact;print-color-adjust:exact}' +
-      '.page{max-width:1120px;margin:0 auto}' +
-      '.top{display:flex;justify-content:space-between;align-items:flex-end;gap:28px;border-bottom:2px solid var(--text);padding-bottom:20px;margin-bottom:28px}' +
-      '.brand{font:800 27px Syne,Arial,sans-serif;letter-spacing:-.03em}' +
-      '.brand span{color:var(--orange)}' +
-      '.title{font:800 clamp(27px,4vw,40px) Syne,Arial,sans-serif;margin:6px 0 0;letter-spacing:-.025em;line-height:1.05}' +
-      '.sub{color:var(--muted);font-size:12.5px;margin-top:7px;max-width:620px;line-height:1.45}' +
-      '.date{color:var(--muted);font-size:11.5px;text-align:right;white-space:nowrap}' +
-      '.category{margin:0 0 28px}' +
-      '.category-head{display:flex;align-items:center;gap:10px;text-transform:uppercase;letter-spacing:.1em;font:800 11.5px Inter,Arial,sans-serif;color:var(--orange-dark);margin:0 0 11px}' +
-      '.category-head i{height:1px;background:var(--line);flex:1}' +
-      '.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:11px}' +
-      '.price-card{background:#fff;border:1px solid var(--line);border-radius:10px;overflow:hidden;break-inside:avoid;page-break-inside:avoid;display:flex;flex-direction:column}' +
-      '.price-card.is-out-stock{border-color:#e5b8b6;background:#fffafa}' +
-      '.photo{height:170px;background:var(--soft);display:flex;align-items:center;justify-content:center;overflow:hidden}' +
-      '.photo img{width:100%;height:100%;object-fit:contain}' +
-      '.no-image{font:800 20px Syne,Arial,sans-serif;color:var(--orange)}' +
-      '.info{padding:10px 11px 12px;display:flex;flex-direction:column;flex:1}' +
-      '.name{font-size:12.5px;font-weight:700;line-height:1.3;min-height:33px}' +
-      '.desc{font-size:9.5px;line-height:1.35;color:var(--muted);margin-top:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}' +
-      '.price{font:800 18px Syne,Arial,sans-serif;color:var(--orange-dark);margin-top:auto;padding-top:8px;line-height:1.1}' +
-      '.price small{font:600 9.5px Inter,Arial,sans-serif;color:var(--muted);margin-left:3px}' +
-      '.price.out-stock{color:var(--danger);font:800 12px Inter,Arial,sans-serif;letter-spacing:.05em}' +
-      '.bottom{border-top:1px solid var(--line);padding-top:15px;margin-top:30px;color:var(--muted);font-size:10.5px;display:flex;justify-content:space-between;gap:12px}' +
-      '.empty{text-align:center;color:var(--muted);padding:60px 20px}' +
-      '@media(max-width:800px){body{padding:22px 14px 36px}.top{align-items:flex-start;flex-direction:column;gap:12px}.date{text-align:left}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.photo{height:155px}}' +
-      '@page{size:A4 portrait;margin:10mm}' +
-      '@media print{' +
-        'html,body{background:#fff!important}' +
-        'body{padding:0!important}' +
-        '.page{max-width:none}' +
-        '.top{margin-bottom:18px;padding-bottom:14px}' +
-        '.category{margin-bottom:17px}' +
-        '.grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}' +
-        '.price-card{border-radius:7px;box-shadow:none}' +
-        '.photo{height:132px}' +
-        '.info{padding:8px 9px 9px}' +
-        '.name{font-size:10.5px;min-height:28px}' +
-        '.desc{font-size:8px}' +
-        '.price{font-size:14px;padding-top:6px}' +
-        '.price.out-stock{font-size:9.5px}' +
-        '.category-head{font-size:10px;margin-bottom:7px}' +
-        '.bottom{margin-top:18px;padding-top:10px;font-size:8.5px}' +
-      '}' +
-      '</style></head><body><main class="page">' +
-      '<header class="top"><div>' +
-        '<div class="brand">' + esc(cfg.logo || 'Roly') + '<span>.</span></div>' +
-        '<h1 class="title">Lista de precios</h1>' +
-        '<div class="sub">' + esc(cfg.sub || 'Insumos gastronómicos para cocinas profesionales') + '</div>' +
-      '</div><div class="date">Actualizada el ' + generatedAt + '</div></header>' +
-      (cards || '<div class="empty">No hay productos para mostrar.</div>') +
-      '<footer class="bottom"><span>' + esc(cfg.logo || 'Distribuidora Roly') + '</span><span>Precios sujetos a actualización.</span></footer>' +
-      '</main></body></html>';
-
-    var win = window.open('', '_blank');
-    if (!win) {
-      toast('Permití las ventanas emergentes para generar la lista.', true);
-      return;
+    // ── Pie de página con numeración ──
+    var total = doc.getNumberOfPages();
+    for (var i = 1; i <= total; i++) {
+      doc.setPage(i);
+      doc.setDrawColor(LINE[0], LINE[1], LINE[2]); doc.setLineWidth(0.2);
+      doc.line(M.left, PH - 12, PW - M.right, PH - 12);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(MUTED[0], MUTED[1], MUTED[2]);
+      doc.text('Distribuidora Roly  -  Precios sujetos a actualización sin previo aviso', M.left, PH - 8);
+      doc.text('Página ' + i + ' de ' + total, PW - M.right, PH - 8, { align: 'right' });
     }
+    return doc;
+  }
+  // @@PDF_BUILDER_END
 
-    win.document.open();
-    win.document.write(html);
-    win.document.close();
-    win.focus();
+  function exportPriceList() {
+    if (priceListBusy) return;
+    priceListBusy = true;
+    toast('🧾 Generando PDF… un momento');
 
-    setTimeout(function () {
-      win.print();
-    }, 700);
+    var products = allProducts().slice();
+    var cfg = getConfig();
 
-    toast('🧾 Lista preparada con productos sin stock. Elegí “Guardar como PDF” en la ventana de impresión.');
+    loadPdfLibs()
+      .then(function () {
+        return Promise.all(products.map(function (p) {
+          return makeThumb(p.imagen, 140).then(function (t) { return [p.id, t]; });
+        }));
+      })
+      .then(function (pairs) {
+        var thumbs = {};
+        pairs.forEach(function (pr) { if (pr[1]) thumbs[pr[0]] = pr[1]; });
+        var doc = buildPriceListPdf(window.jspdf.jsPDF, { products: products, categorias: categorias, cfg: cfg, thumbs: thumbs });
+        var d = new Date();
+        var stamp = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+        doc.save('Lista-de-precios-Roly-' + stamp + '.pdf');
+        toast('✓ PDF descargado');
+      })
+      .catch(function (err) {
+        if (window.console) console.error('Lista de precios:', err);
+        toast('No se pudo generar el PDF (¿sin internet?). Probá de nuevo.', true);
+      })
+      .then(function () { priceListBusy = false; });
   }
 
   function handleImportFile(ev) {
